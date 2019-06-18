@@ -77,7 +77,7 @@ func NewStreamFileBuilderForPath(path string) (*StreamFileBuilder, error) {
 // AddSheet will add sheets with the given name with the provided headers. The headers cannot be edited later, and all
 // rows written to the sheet must contain the same number of cells as the header. Sheet names must be unique, or an
 // error will be thrown.
-func (sb *StreamFileBuilder) AddSheet(name string, headers []string, cellTypes []*CellType) error {
+func (sb *StreamFileBuilder) AddSheet(name string, headers []string, cellTypes []*CellType, headerStyle *Style, dataCellStyle *Style) error {
 	if sb.built {
 		return BuiltStreamFileBuilderError
 	}
@@ -97,27 +97,55 @@ func (sb *StreamFileBuilder) AddSheet(name string, headers []string, cellTypes [
 		sb.built = true
 		return errors.New("failed to write headers")
 	}
-	for i, cellType := range cellTypes {
-		var cellStyleIndex int
-		var ok bool
-		if cellType != nil {
-			// The cell type is one of the attributes of a Style.
-			// Since it is the only attribute of Style that we use, we can assume that cell types
-			// map one to one with Styles and their Style ID.
-			// If a new cell type is used, a new style gets created with an increased id, if an existing cell type is
-			// used, the pre-existing style will also be used.
-			cellStyleIndex, ok = sb.cellTypeToStyleIds[*cellType]
-			if !ok {
-				sb.maxStyleId++
-				cellStyleIndex = sb.maxStyleId
-				sb.cellTypeToStyleIds[*cellType] = sb.maxStyleId
-			}
-			sheet.Cols[i].SetType(*cellType)
-		}
-		sb.styleIds[len(sb.styleIds)-1] = append(sb.styleIds[len(sb.styleIds)-1], cellStyleIndex)
+	for i, ct := range cellTypes {
+		sheet.Cell(0, i).SetStyle(headerStyle)
+		sheet.Cols[i].SetStyle(dataCellStyle)
+		sheet.Cols[i].SetType(*ct)
+
 	}
+	//for i, cellType := range cellTypes {
+	//	var cellStyleIndex int
+	//	var ok bool
+	//	if cellType != nil {
+	//		// The cell type is one of the attributes of a Style.
+	//		// Since it is the only attribute of Style that we use, we can assume that cell types
+	//		// map one to one with Styles and their Style ID.
+	//		// If a new cell type is used, a new style gets created with an increased id, if an existing cell type is
+	//		// used, the pre-existing style will also be used.
+	//		cellStyleIndex, ok = sb.cellTypeToStyleIds[*cellType]
+	//		if !ok {
+	//			sb.maxStyleId++
+	//			cellStyleIndex = sb.maxStyleId
+	//			sb.cellTypeToStyleIds[*cellType] = sb.maxStyleId
+	//		}
+	//		sheet.Cols[i].SetType(*cellType)
+	//		sheet.Cols[i].SetStyle(dataCellStyle)
+	//
+	//	}
+	//	sb.styleIds[len(sb.styleIds)-1] = append(sb.styleIds[len(sb.styleIds)-1], cellStyleIndex)
+	//}
+
+
 	return nil
 }
+
+
+func (sb *StreamFileBuilder) AddSearchCriteria() (*Sheet, error) {
+	if sb.built {
+		return nil, BuiltStreamFileBuilderError
+	}
+	sheet, err := sb.xlsxFile.AddSheet("Search Criteria")
+
+	sb.styleIds = append(sb.styleIds, []int{})
+	if err != nil {
+		// Set built on error so that all subsequent calls to the builder will also fail.
+		sb.built = true
+		return nil, err
+	}
+
+	return sheet, nil
+}
+
 
 // AddValidation will add a validation to a specific column.
 func (sb *StreamFileBuilder) AddValidation(sheetIndex, colIndex, rowStartIndex int, validation *xlsxCellDataValidation) {
