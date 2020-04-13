@@ -51,6 +51,62 @@ func (sf *StreamFile) Write(cells []string) error {
 	return sf.zipWriter.Flush()
 }
 
+func (sf *StreamFile) WriteWithCellTypes(cells []string, cellTypes []*CellType) error {
+	if sf.currentSheet == nil {
+		return NoCurrentSheetError
+	}
+	if len(cells) != sf.currentSheet.columnCount {
+		return WrongNumberOfRowsError
+	}
+	sf.currentSheet.rowCount++
+	if err := sf.currentSheet.write(`<row r="` + strconv.Itoa(sf.currentSheet.rowCount) + `">`); err != nil {
+		return err
+	}
+	for colIndex, cellData := range cells {
+		cellCoordinate := GetCellIDStringFromCoords(colIndex, sf.currentSheet.rowCount-1)
+		isCellDataNumeric := false;
+		if ( *cellTypes[colIndex] == CellTypeNumeric) {
+			isCellDataNumeric = true;
+		}
+		cellType := "inlineStr"
+		cellOpen := `<c r="` + cellCoordinate + `" t="` + cellType + `"`
+		if(isCellDataNumeric){
+			cellOpen = `<c r="` + cellCoordinate + `" t="n"`
+		}
+
+		// Add in the style id if the cell isn't using the default style
+		if colIndex < len(sf.currentSheet.styleIds) && sf.currentSheet.styleIds[colIndex] != 0 {
+			cellOpen += ` s="` + strconv.Itoa(sf.currentSheet.styleIds[colIndex]) + `"`
+		}
+		if(isCellDataNumeric){
+			cellOpen += `><v>`
+		} else {
+			cellOpen += `><is><t>`
+		}
+
+		cellClose := `</t></is></c>`
+
+		if(isCellDataNumeric){
+			cellClose = `</v></c>`
+		}
+
+
+		if err := sf.currentSheet.write(cellOpen); err != nil {
+			return err
+		}
+		if err := xml.EscapeText(sf.currentSheet.writer, []byte(cellData)); err != nil {
+			return err
+		}
+		if err := sf.currentSheet.write(cellClose); err != nil {
+			return err
+		}
+	}
+	if err := sf.currentSheet.write(`</row>`); err != nil {
+		return err
+	}
+	return sf.zipWriter.Flush()
+}
+
 func (sf *StreamFile) WriteAll(records [][]string) error {
 	if sf.err != nil {
 		return sf.err
@@ -65,6 +121,11 @@ func (sf *StreamFile) WriteAll(records [][]string) error {
 	return sf.zipWriter.Flush()
 }
 
+func isNumeric(s string) bool {
+	_, err := strconv.ParseFloat(s, 64)
+	return err == nil
+}
+
 func (sf *StreamFile) write(cells []string) error {
 	if sf.currentSheet == nil {
 		return NoCurrentSheetError
@@ -77,24 +138,31 @@ func (sf *StreamFile) write(cells []string) error {
 		return err
 	}
 	for colIndex, cellData := range cells {
-		// documentation for the c.t (cell.Type) attribute:
-		// b (Boolean): Cell containing a boolean.
-		// d (Date): Cell contains a date in the ISO 8601 format.
-		// e (Error): Cell containing an error.
-		// inlineStr (Inline String): Cell containing an (inline) rich string, i.e., one not in the shared string table.
-		// If this cell type is used, then the cell value is in the is element rather than the v element in the cell (c element).
-		// n (Number): Cell containing a number.
-		// s (Shared String): Cell containing a shared string.
-		// str (String): Cell containing a formula string.
 		cellCoordinate := GetCellIDStringFromCoords(colIndex, sf.currentSheet.rowCount-1)
+		isCellDataNumeric := isNumeric(cellData)
+
 		cellType := "inlineStr"
 		cellOpen := `<c r="` + cellCoordinate + `" t="` + cellType + `"`
+		if(isCellDataNumeric){
+			cellOpen = `<c r="` + cellCoordinate + `" t="n"`
+		}
+
 		// Add in the style id if the cell isn't using the default style
 		if colIndex < len(sf.currentSheet.styleIds) && sf.currentSheet.styleIds[colIndex] != 0 {
 			cellOpen += ` s="` + strconv.Itoa(sf.currentSheet.styleIds[colIndex]) + `"`
 		}
-		cellOpen += `><is><t>`
+		if(isCellDataNumeric){
+			cellOpen += `><v>`
+		} else {
+			cellOpen += `><is><t>`
+		}
+
 		cellClose := `</t></is></c>`
+
+		if(isCellDataNumeric){
+			cellClose = `</v></c>`
+		}
+
 
 		if err := sf.currentSheet.write(cellOpen); err != nil {
 			return err
